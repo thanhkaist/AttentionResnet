@@ -15,6 +15,8 @@ from tensorboardX import SummaryWriter
 from models import *
 from configs import *
 
+configs = Configs
+
 def loadCifa100():
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
@@ -58,7 +60,7 @@ def getAccuracy(model,validationLoader,validationSet):
     return [top1,top5]
 
 def main():
-    configs = Configs
+
     print('Dataset is loading ...........')
     train_loader, val_loader, train_set, validation_set = loadCifa100()
     print('Make checkpoint folder')
@@ -71,6 +73,13 @@ def main():
     print('\tModel loaded: ' + configs.model )
     print("\tNumber of parameters: ", sum([param.nelement() for param in model.parameters()]))
 
+    if configs.test:
+        print("Run model in test mode")
+        if os.path.exists(model_path):
+            model.load_state_dict(torch.load(model_path))
+        else:
+            raise Exception('Cannot find model', model_path)
+
     if configs.gpu:
         if torch.cuda.device_count() > 1:
             print("Using", torch.cuda.device_count(), "GPUs!")
@@ -79,11 +88,6 @@ def main():
         cudnn.benchmark = True
 
     if configs.test:
-        print("Run model in test mode")
-        if os.path.exists(model_path):
-            model.load_state_dict(torch.load(model_path))
-        else:
-            raise Exception('Cannot find model', model_path)
         print('Testing...')
         model.eval()
         # accuracy = 0

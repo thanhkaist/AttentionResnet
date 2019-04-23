@@ -16,7 +16,7 @@ def argparsing():
     parser.add_argument('--model', type=str, default='resnet50')
     parser.add_argument('--attention', type=str, default='no')
     parser.add_argument('--norm', type=str, default='bn')
-    parser.add_argument('--batch-size', type=int, default=128)
+    parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--num_epochs', type=int, default=200)
     parser.add_argument('--learning_rate', type=float, default=0.1)
     parser.add_argument('--test', dest='test', action='store_true')
