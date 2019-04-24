@@ -48,7 +48,7 @@ def getAccuracy(model,validationLoader,validationSet):
         outputs = model(inputs)
         outputs, labels = outputs.data, labels.data
         _, preds1 = outputs.topk(1, 1, True, True)
-        _, preds5 = outputs.topk(1, 2, True, True)
+        _, preds5 = outputs.topk(5, 1, True, True)
         preds1 = preds1.t()
         corrects1 = preds1.eq(labels.view(1, -1).expand_as(preds1))
         top1 += torch.sum(corrects1)
@@ -90,19 +90,9 @@ def main():
     if configs.test:
         print('Testing...')
         model.eval()
-        # accuracy = 0
-        # for i, (inputs, labels) in enumerate(val_loader):
-        #     inputs, labels = (Variable(inputs.cuda()),Variable(labels.cuda()))
-        #     outputs = model(inputs)
-        #     outputs, labels = outputs.data, labels.data
-        #     _, preds = outputs.topk(1, 1, True, True)
-        #     preds = preds.t()
-        #     corrects = preds.eq(labels.view(1, -1).expand_as(preds))
-        #     accuracy += torch.sum(corrects)
-        # accuracy = accuracy.item() / len(validation_set) * 100
         top1, top5 = getAccuracy(model,val_loader,validation_set)
-        print('Accuracy on Top 1 error: %.2f' % top1)
-        print('Accuracy on Top 5 error: %.2f' % top5)
+        print('Accuracy on Top 1 accuracy: %.2f' % top1)
+        print('Accuracy on Top 5 accuracy: %.2f' % top5)
         return
 
     # Tensor board
@@ -166,7 +156,7 @@ def main():
         tb.add_scalar('Learning rate', learning_rate, epoch)
         tb.add_scalar('Train loss', train_loss, epoch)
         tb.add_scalar('Val loss', val_loss, epoch)
-        tb.add_scalar('Val acc', val_acc, epoch)
+        tb.add_scalar('Val top1 acc', val_acc, epoch)
 
     print('Best validation acc %.2f' % best_val_acc)
 
