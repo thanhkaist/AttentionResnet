@@ -102,7 +102,6 @@ def main():
     optimizer = optim.SGD(model.parameters(), lr=configs.lr, momentum=0.9, weight_decay=configs.weight_decay,nesterov=True)
     scheduler = lr_scheduler.MultiStepLR(optimizer, configs.schedule, gamma=0.2)
     criterion = nn.CrossEntropyLoss()
-    pdb.set_trace()
     best_val_acc = -1
     for epoch in range(args.num_epochs):
         # Train process
@@ -121,6 +120,7 @@ def main():
             running_loss += loss.data.item()
             loss.backward()
             optimizer.step()
+            del inputs, labels
         scheduler.step()
         train_loss = running_loss / num_batches
         print('\tTraining loss %f' % train_loss)
@@ -129,17 +129,19 @@ def main():
         val_acc = 0
         num_batches = len(validation_set) // configs.batch_size + 1
         running_loss = 0
-        for i, (inputs, labels) in enumerate(val_loader):
-            if configs.gpu:
-                inputs, labels = (Variable(inputs.cuda()),Variable(labels.cuda()))
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            running_loss += loss.data.item()
-            outputs, labels = outputs.data, labels.data
-            _, preds = outputs.topk(1, 1, True, True)
-            preds = preds.t()
-            corrects = preds.eq(labels.view(1, -1).expand_as(preds))
-            val_acc += torch.sum(corrects)
+        with torch.no_grad():
+            for i, (inputs, labels) in enumerate(val_loader):
+                if configs.gpu:
+                    inputs, labels = (Variable(inputs.cuda()),Variable(labels.cuda()))
+                outputs = model(inputs)
+                loss = criterion(outputs, labels)
+                running_loss += loss.data.item()
+                outputs, labels = outputs.data, labels.data
+                _, preds = outputs.topk(1, 1, True, True)
+                preds = preds.t()
+                corrects = preds.eq(labels.view(1, -1).expand_as(preds))
+                val_acc += torch.sum(corrects)
+                del inputs, labels
         val_acc = val_acc.item() / len(validation_set) * 100
         val_loss = running_loss / num_batches
         if val_acc > best_val_acc:
