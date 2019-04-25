@@ -80,7 +80,7 @@ def main():
     checkpoint = os.path.join(configs.checkpoint, args.model)
     if not os.path.exists(checkpoint):
         os.makedirs(checkpoint)
-    model_path = os.path.join(checkpoint, 'best_model.pt')
+    model_path = os.path.join(checkpoint,configs.attention+'_'+'best_model.pt')
     print('Load model')
     model = get_model(configs.model, configs.norm,configs.attention)
     print('\tModel loaded: ' + configs.model )
