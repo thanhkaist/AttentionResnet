@@ -67,9 +67,9 @@ def getAccuracy(model,validationLoader,validationSet):
         preds = preds.t()
         corrects = preds.eq(labels.view(1, -1).expand_as(preds))
         top1 += corrects[:1].view(-1).float().sum(0)
-        top5 += corrects[:1].view(-1).float().sum(0)
-    top1 = top1.mul_(len(validationSet) * 100)
-    top5 = top5.mul_(len(validationSet) * 100)
+        top5 += corrects[:5].view(-1).float().sum(0)
+    top1 = top1.mul_(100/len(validationSet) )
+    top5 = top5.mul_(100/len(validationSet) )
     return [top1,top5]
 
 def main():
