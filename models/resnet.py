@@ -105,7 +105,7 @@ class SE_Attention_Layer(nn.Module):
         y = self.avg_pool(x)
         y = self.fc(y)
         y = F.sigmoid(y)
-        return  x*(1 +y.expand_as(x))
+        return  x*y.expand_as(x)
 
 class BAM_Attention_Layer(nn.Module):
     def __init__(self, channel, att = 'both', reduction=16):
