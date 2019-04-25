@@ -39,24 +39,37 @@ def loadCifa100():
     return [train_loader,val_loader,train_set, validation_set]
 
 
+def accuracy(output, target, topk=(1,)):
+    """Computes the precision@k for the specified values of k"""
+    maxk = max(topk)
+    batch_size = target.size(0)
+
+    _, pred = output.topk(maxk, 1, True, True)
+    pred = pred.t()
+    correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+    res = []
+    for k in topk:
+        correct_k = correct[:k].view(-1).float().sum(0)
+        res.append(correct_k.mul_(100.0 / batch_size))
+    return res
+
+
 
 def getAccuracy(model,validationLoader,validationSet):
-    top1 = 0
-    top5 = 0
+    top1 = 0.0
+    top5 = 0.0
     for i, (inputs, labels) in enumerate(validationLoader):
         inputs, labels = (Variable(inputs.cuda()), Variable(labels.cuda()))
         outputs = model(inputs)
         outputs, labels = outputs.data, labels.data
-        _, preds1 = outputs.topk(1, 1, True, True)
-        _, preds5 = outputs.topk(5, 1, True, True)
-        preds1 = preds1.t()
-        corrects1 = preds1.eq(labels.view(1, -1).expand_as(preds1))
-        top1 += torch.sum(corrects1)
-        preds5 = preds5.t()
-        corrects5 = preds1.eq(labels.view(1, -1).expand_as(preds5))
-        top5 += torch.sum(corrects5)
-    top1 = top1.item() / len(validationSet) * 100
-    top5 = top5.item() / len(validationSet) * 100
+        _, preds = outputs.topk(5, 1, True, True)
+        preds = preds.t()
+        corrects = preds.eq(labels.view(1, -1).expand_as(preds))
+        top1 += corrects[:1].view(-1).float().sum(0)
+        top5 += corrects[:1].view(-1).float().sum(0)
+    top1 = top1.mul_(len(validationSet) * 100)
+    top5 = top5.mul_(len(validationSet) * 100)
     return [top1,top5]
 
 def main():

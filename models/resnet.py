@@ -36,6 +36,57 @@ class Norm(nn.Module):
         else:
             return self.norm(x)
 
+class Flatten(nn.Module):
+    def forward(self, x):
+        return x.view(x.size(0), -1)
+
+class BamSpatialAttention(nn.Module):
+    def __init__(self,channel,reduction = 16, dilation_ratio =2):
+        super(BamSpatialAttention,self).__init__()
+
+        self.body = nn.Sequential(
+            nn.Conv2d(channel,channel//reduction,1),
+
+            nn.BatchNorm2d(channel//reduction),
+            nn.Conv2d(channel//reduction,channel//reduction,3,padding=dilation_ratio,dilation=dilation_ratio),
+            nn.BatchNorm2d(channel // reduction),
+            nn.ReLU(True),
+
+            nn.BatchNorm2d(channel // reduction),
+            nn.Conv2d(channel // reduction, channel // reduction, 3, padding=dilation_ratio, dilation=dilation_ratio),
+            nn.BatchNorm2d(channel // reduction),
+            nn.ReLU(True),
+
+            nn.Conv2d(channel//reduction,1,1)
+        )
+    def forward(self, x):
+        return self.body(x)
+
+
+class BamChannelAttention(nn.Module):
+    def __init__(self,channel,reduction = 16):
+        super(BamChannelAttention,self).__init__()
+        self.avgPool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Conv2d(channel,channel//reduction,1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(channel//reduction,channel,1),
+        )
+    def forward(self,x):
+        out = self.avgPool(x)
+        out = self.fc(out)
+        return out
+
+
+
+
+class CBamSpatialAttention(nn.Module):
+    def __init__(self):
+        super(CBamSpatialAttention,self).__init__()
+
+class CBamChannelAttention(nn.Module):
+    def __init__(self):
+        super(CBamChannelAttention,self).__init__()
 
 
 
@@ -56,21 +107,26 @@ class SE_Attention_Layer(nn.Module):
         return y
 
 class BAM_Attention_Layer(nn.Module):
-    def __init__(self, channel, size, reduction=8):
+    def __init__(self, channel, att = 'both', reduction=16):
         super(BAM_Attention_Layer, self).__init__()
-        self.shrink = nn.Conv2d(channel, 1, 1)
-        size = size**2
-        self.body = nn.Sequential(
-            nn.Linear(size, size//reduction),
-            nn.ReLU(True),
-            nn.Linear(size//reduction, size),
-        )
+        self.att = att
+        self.channelAtt =None
+        self.spatialAtt =None
+        if att == 'both' or att == 'c':
+            self.channelAtt = BamChannelAttention(channel,reduction)
+        if att == 'both' or att == 's':
+            self.spatialAtt = BamSpatialAttention(channel,reduction)
 
     def forward(self, x):
-        b, c, size, size = x.size()
-        y = self.shrink(x).view(b, -1)
-        y = self.body(y).view(b, 1, size, size)
-        return y
+        if self.att =='both':
+            y1 = self.spatialAtt(x)
+            y2 = self.channelAtt(x)
+            y = y1* y2
+        elif self.att =='c':
+            y = self.channelAtt(x)
+        elif self.att =='s':
+            y = self.spatialAtt(x)
+        return  (1 +F.sigmoid(y))*x
 
 class CBAM_Attention_Layer(nn.Module):
     def __init__(self, channel):
@@ -104,17 +160,17 @@ class Bottleneck(nn.Module):
         if attention == 'se':
             self.att = SE_Attention_Layer(planes * 4)
         elif attention == 'c_bam':
-            self.att = BAM_Attention_Layer(planes * 4)
+            self.att = BAM_Attention_Layer(planes * 4,'c')
         elif attention == 's_bam':
-            self.att = BAM_Attention_Layer(planes * 4)
+            self.att = BAM_Attention_Layer(planes * 4,'s')
         elif attention == 'j_bam':
-            self.att = BAM_Attention_Layer(planes * 4)
+            self.att = BAM_Attention_Layer(planes * 4,'both')
         elif attention == 'c_cbam':
-            self.att = CBAM_Attention_Layer(planes * 4)
+            self.att = CBAM_Attention_Layer(planes * 4,'c')
         elif attention == 's_cbam':
-            self.att = CBAM_Attention_Layer(planes * 4)
+            self.att = CBAM_Attention_Layer(planes * 4,'s')
         elif attention == 'j_cbam':
-            self.att = CBAM_Attention_Layer(planes * 4)
+            self.att = CBAM_Attention_Layer(planes * 4,'both')
         elif attention == 'no':
             self.att = None
         else:
@@ -173,17 +229,17 @@ class BasicBlock(nn.Module):
         if attention == 'se':
             self.att = SE_Attention_Layer(planes, reduction=4)
         elif attention == 'c_bam':
-            self.att = BAM_Attention_Layer(planes, base_width, reduction=8)
+            self.att = BAM_Attention_Layer(planes, 'c')
         elif attention == 's_bam':
-            self.att = BAM_Attention_Layer(planes, base_width, reduction=8)
+            self.att = BAM_Attention_Layer(planes, 's')
         elif attention == 'j_bam':
-            self.att = BAM_Attention_Layer(planes, base_width, reduction=8)
+            self.att = BAM_Attention_Layer(planes, 'both')
         elif attention == 'c_cbam':
-            self.att = CBAM_Attention_Layer(planes)
+            self.att = CBAM_Attention_Layer(planes,'c')
         elif attention == 's_cbam':
-            self.att = CBAM_Attention_Layer(planes)
+            self.att = CBAM_Attention_Layer(planes,'s')
         elif attention == 'j_cbam':
-            self.att = CBAM_Attention_Layer(planes)
+            self.att = CBAM_Attention_Layer(planes,'both')
 
         elif attention == 'no':
             self.att = None
