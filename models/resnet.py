@@ -60,7 +60,7 @@ class BamSpatialAttention(nn.Module):
             nn.Conv2d(channel//reduction,1,1)
         )
     def forward(self, x):
-        return self.body(x)
+        return self.body(x).expand_as(x)
 
 
 class BamChannelAttention(nn.Module):
@@ -75,7 +75,7 @@ class BamChannelAttention(nn.Module):
     def forward(self,x):
         out = self.avgPool(x)
         out = self.fc(out)
-        return out
+        return out.expand_as(x)
 
 
 
@@ -104,7 +104,8 @@ class SE_Attention_Layer(nn.Module):
     def forward(self, x):
         y = self.avg_pool(x)
         y = self.fc(y)
-        return y
+        y = F.sigmoid(y)
+        return  x*(1 +y.expand_as(x))
 
 class BAM_Attention_Layer(nn.Module):
     def __init__(self, channel, att = 'both', reduction=16):
@@ -126,7 +127,7 @@ class BAM_Attention_Layer(nn.Module):
             y = self.channelAtt(x)
         elif self.att =='s':
             y = self.spatialAtt(x)
-        return  (1 +F.sigmoid(y))*x
+        return (1 +F.sigmoid(y))*x
 
 class CBAM_Attention_Layer(nn.Module):
     def __init__(self, channel):
@@ -191,9 +192,7 @@ class Bottleneck(nn.Module):
         out = self.bn3(out)
 
         if self.att is not None:
-            att = self.att(out)
-            att = self.sigmoid(att)
-            out = out*att
+            out = self.att(out)
 
         if self.downsample is not None:
             residual = self.downsample(x)
