@@ -69,6 +69,7 @@ class BamChannelAttention(nn.Module):
         self.avgPool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Sequential(
             nn.Conv2d(channel,channel//reduction,1),
+            nn.BatchNorm2d(channel//reduction)
             nn.ReLU(inplace=True),
             nn.Conv2d(channel//reduction,channel,1),
         )
