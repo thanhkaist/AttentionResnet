@@ -161,11 +161,11 @@ class Bottleneck(nn.Module):
         if attention == 'se':
             self.att = SE_Attention_Layer(planes * 4)
         elif attention == 'c_bam':
-            self.att = BAM_Attention_Layer(planes * 4,'c')
+            self.att = None
         elif attention == 's_bam':
-            self.att = BAM_Attention_Layer(planes * 4,'s')
+            self.att = None
         elif attention == 'j_bam':
-            self.att = BAM_Attention_Layer(planes * 4,'both')
+            self.att = None
         elif attention == 'c_cbam':
             self.att = CBAM_Attention_Layer(planes * 4,'c')
         elif attention == 's_cbam':
@@ -227,23 +227,17 @@ class BasicBlock(nn.Module):
 
         if attention == 'se':
             self.att = SE_Attention_Layer(planes, reduction=4)
-        elif attention == 'c_bam':
-            self.att = BAM_Attention_Layer(planes, 'c')
-        elif attention == 's_bam':
-            self.att = BAM_Attention_Layer(planes, 's')
-        elif attention == 'j_bam':
-            self.att = BAM_Attention_Layer(planes, 'both')
         elif attention == 'c_cbam':
             self.att = CBAM_Attention_Layer(planes,'c')
         elif attention == 's_cbam':
             self.att = CBAM_Attention_Layer(planes,'s')
         elif attention == 'j_cbam':
             self.att = CBAM_Attention_Layer(planes,'both')
-
         elif attention == 'no':
             self.att = None
         else:
-            raise Exception('Unknown attention type')
+            self.att = None
+            #raise Exception('Unknown attention type')
 
     def forward(self, x):
 
@@ -291,6 +285,27 @@ class ResNet(nn.Module):
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2, attention=attention)
         self.avgpool = nn.AvgPool2d(8, stride=1)
         self.fc = nn.Linear(512 * block.expansion, num_classes)
+
+
+        if attention == 'c_bam':
+            self.bam1 = BAM_Attention_Layer(64*block.expansion,'c')
+            self.bam2 = BAM_Attention_Layer(128*block.expansion,'c')
+            self.bam3 = BAM_Attention_Layer(256*block.expansion,'c')
+        elif attention == 'j_bam':
+            self.bam1 = BAM_Attention_Layer(64*block.expansion,'both')
+            self.bam2 = BAM_Attention_Layer(128*block.expansion,'both')
+            self.bam3 = BAM_Attention_Layer(256*block.expansion,'both')
+        elif attention == 's_bam':
+            self.bam1 = BAM_Attention_Layer(64*block.expansion,'s')
+            self.bam2 = BAM_Attention_Layer(128*block.expansion,'s')
+            self.bam3 = BAM_Attention_Layer(256*block.expansion,'s')
+        else:
+            self.bam1 = None
+            self.bam2 = None
+            self.bam3 = None
+
+
+
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -321,8 +336,17 @@ class ResNet(nn.Module):
         x = self.bn1(x)
         x = self.relu(x)
         x = self.layer1(x)
+        if not self.bam1 is None:
+            x = self.bam1(x)
+
         x = self.layer2(x)
+        if not self.bam1 is None:
+            x = self.bam2(x)
+
         x = self.layer3(x)
+        if not self.bam1 is None:
+            x = self.bam3(x)
+
         x = self.layer4(x)
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
