@@ -69,7 +69,7 @@ class BamChannelAttention(nn.Module):
         self.avgPool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Sequential(
             nn.Conv2d(channel,channel//reduction,1),
-            nn.BatchNorm2d(channel//reduction)
+            #nn.BatchNorm2d(channel//reduction)
             nn.ReLU(inplace=True),
             nn.Conv2d(channel//reduction,channel,1),
         )
@@ -123,7 +123,7 @@ class BAM_Attention_Layer(nn.Module):
         if self.att =='both':
             y1 = self.spatialAtt(x)
             y2 = self.channelAtt(x)
-            y = y1* y2
+            y = y1+ y2
         elif self.att =='c':
             y = self.channelAtt(x)
         elif self.att =='s':

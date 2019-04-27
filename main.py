@@ -77,13 +77,14 @@ def main():
     print('Dataset is loading ...........')
     train_loader, val_loader, train_set, validation_set = loadCifa100()
     print('Make checkpoint folder')
-    checkpoint = os.path.join(configs.checkpoint, args.model)
+    checkpoint = os.path.join(configs.checkpoint, +configs.model+'_'+ configs.attention)
     if not os.path.exists(checkpoint):
         os.makedirs(checkpoint)
     model_path = os.path.join(checkpoint,configs.attention+'_'+'best_model.pt')
     print('Load model')
     model = get_model(configs.model, configs.norm,configs.attention)
     print('\tModel loaded: ' + configs.model )
+    print('\tAttention type: ' + configs.attention )
     print("\tNumber of parameters: ", sum([param.nelement() for param in model.parameters()]))
 
     if configs.test:
