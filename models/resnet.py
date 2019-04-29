@@ -82,12 +82,42 @@ class BamChannelAttention(nn.Module):
 
 
 class CBamSpatialAttention(nn.Module):
-    def __init__(self):
+    def __init__(self,channel,reduction = 16):
         super(CBamSpatialAttention,self).__init__()
+        kernel_size = 5
+        self.att = nn.Sequential{
+            nn.Conv2d(2, 1, kernel_size, stride=1, padding=(kernel_size-1)//2),
+            nn.BatchNorm2d(1),
+        }
+
+    def forward(self, x):
+        out = self._PoolAlongChannel(x)
+        out = self.att(out)
+        out = F.sigmoid(out)
+        return x*out
+
+    def _PoolAlongChannel(self,x):
+        torch.cat((torch.max(x,1)[0].unsqueeze(1), torch.mean(x,1).unsqueeze(1)), dim=1)
+
 
 class CBamChannelAttention(nn.Module):
-    def __init__(self):
+    def __init__(self,channel,reduction = 16):
         super(CBamChannelAttention,self).__init__()
+        self.channel = channel
+        self.fc = nn.Sequential(
+            Flatten(),
+            nn.Linear(self.channel,self.channel//reduction),
+            nn.ReLU,
+            nn.Linear(self.channel//reduction,self.channel)
+        )
+    def forward(self, x):
+        avgPool = F.avg_pool2d(x,(x.size(2),x.size(3)),stride =  (x.size(2),x.size(3)))
+        out1 = self.fc(avgPool)
+        maxPool = F.max_pool2d(x,(x.size(2),x.size(3)),stride =  (x.size(2),x.size(3)))
+        out2 = self.fc(maxPool)
+        out = out1 + out2
+        att = F.sigmoid(out).unsqueeze(2).unsqueeze(3).expand_as(x)
+        return x*att
 
 
 
@@ -131,15 +161,27 @@ class BAM_Attention_Layer(nn.Module):
         return (1 +F.sigmoid(y))*x
 
 class CBAM_Attention_Layer(nn.Module):
-    def __init__(self, channel):
+    def __init__(self, channel,att = 'both', reduction=16):
         super(CBAM_Attention_Layer, self).__init__()
-        self.channel_att = SE_Attention_Layer(channel)
-        self.spatial_att = BAM_Attention_Layer(channel)
+
+        self.channelAtt = None
+        self.spatialAtt = None
+        if att == 'both' or att == 'c':
+            self.channel_att = CBamChannelAttention(channel,reduction)
+        if att == 'both' or att == 's':
+            self.spatial_att = CBamSpatialAttention(channel,reduction)
+
+
 
     def forward(self, x):
-        y1 = self.channel_att(x)
-        y2 = self.spatial_att(x)
-        return y1 + y2
+        if self.att =='both':
+            y = self.channelAtt(x)
+            y = self.spatialAtt(y)
+        elif self.att =='c':
+            y = self.channelAtt(x)
+        elif self.att =='s':
+            y = self.spatialAtt(x)
+        return y
 
 # Blocks
 
