@@ -85,10 +85,10 @@ class CBamSpatialAttention(nn.Module):
     def __init__(self,channel,reduction = 16):
         super(CBamSpatialAttention,self).__init__()
         kernel_size = 5
-        self.att = nn.Sequential{
+        self.att = nn.Sequential(
             nn.Conv2d(2, 1, kernel_size, stride=1, padding=(kernel_size-1)//2),
             nn.BatchNorm2d(1),
-        }
+        )
 
     def forward(self, x):
         out = self._PoolAlongChannel(x)
@@ -97,7 +97,7 @@ class CBamSpatialAttention(nn.Module):
         return x*out
 
     def _PoolAlongChannel(self,x):
-        torch.cat((torch.max(x,1)[0].unsqueeze(1), torch.mean(x,1).unsqueeze(1)), dim=1)
+        return torch.cat((torch.max(x,1)[0].unsqueeze(1), torch.mean(x,1).unsqueeze(1)), dim=1)
 
 
 class CBamChannelAttention(nn.Module):
@@ -107,7 +107,7 @@ class CBamChannelAttention(nn.Module):
         self.fc = nn.Sequential(
             Flatten(),
             nn.Linear(self.channel,self.channel//reduction),
-            nn.ReLU,
+            nn.ReLU(),
             nn.Linear(self.channel//reduction,self.channel)
         )
     def forward(self, x):
@@ -163,13 +163,13 @@ class BAM_Attention_Layer(nn.Module):
 class CBAM_Attention_Layer(nn.Module):
     def __init__(self, channel,att = 'both', reduction=16):
         super(CBAM_Attention_Layer, self).__init__()
-
+        self.att = att
         self.channelAtt = None
         self.spatialAtt = None
         if att == 'both' or att == 'c':
-            self.channel_att = CBamChannelAttention(channel,reduction)
+            self.channelAtt = CBamChannelAttention(channel,reduction)
         if att == 'both' or att == 's':
-            self.spatial_att = CBamSpatialAttention(channel,reduction)
+            self.spatialAtt = CBamSpatialAttention(channel,reduction)
 
 
 
