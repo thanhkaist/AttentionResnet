@@ -249,8 +249,10 @@ class BasicBlock(nn.Module):
     expansion = 1
 
     def __init__(self, inplanes, planes, stride=1, downsample=None, groups=1,
-                 base_width=64, norm_layer=None, attention ='no'):
+                 base_width=64, t_norm='bn', attention ='no'):
         super(BasicBlock, self).__init__()
+        if t_norm == 'bn':
+            norm_layer = nn.BatchNorm2d
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         if groups != 1 or base_width != 64:
@@ -260,14 +262,14 @@ class BasicBlock(nn.Module):
         # Both self.conv1 and self.downsample layers downsample the input when stride != 1
         self.conv1 = conv3x3(inplanes, width,stride=stride)
         self.bn1 = norm_layer(width)
-        self.conv2 = conv3x3(width, width, stride, groups)
+        self.conv2 = conv3x3(width, width)
         self.bn2 = norm_layer(width)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
 
         if attention == 'se':
-            self.att = SE_Attention_Layer(planes * 4)
+            self.att = SE_Attention_Layer(planes)
         elif attention == 'c_bam':
             self.att = None
         elif attention == 's_bam':
@@ -275,11 +277,11 @@ class BasicBlock(nn.Module):
         elif attention == 'j_bam':
             self.att = None
         elif attention == 'c_cbam':
-            self.att = CBAM_Attention_Layer(planes,'c')
+            self.att = CBAM_Attention_Layer(width,'c')
         elif attention == 's_cbam':
-            self.att = CBAM_Attention_Layer(planes,'s')
+            self.att = CBAM_Attention_Layer(width,'s')
         elif attention == 'j_cbam':
-            self.att = CBAM_Attention_Layer(planes,'both')
+            self.att = CBAM_Attention_Layer(width,'both')
         elif attention == 'no':
             self.att = None
         else:
@@ -294,12 +296,11 @@ class BasicBlock(nn.Module):
         out = self.relu(out)
         out = self.conv2(out)
         out = self.bn2(out)
-        if self.downsample is not None:
-            identity = self.downsample(x)
-
         if self.att is not None:
             out = self.att(out)
-
+        if self.downsample is not None:
+            identity = self.downsample(x)
+        #pdb.set_trace()
         out += identity
         out = self.relu(out)
         return out
@@ -353,7 +354,7 @@ class ResNet(nn.Module):
 
     def _make_layer(self, block, planes, blocks, stride=1, attention='no'):
         downsample = None
-        if stride != 1 or self.inplanes != planes * block.expansion:
+        if  stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
                 nn.Conv2d(self.inplanes, planes * block.expansion,
                           kernel_size=1, stride=stride, bias=True),
@@ -461,7 +462,7 @@ def cbam_resnet34(attention="joint",norm = 'bn',**kwargs):
     return model
 
 
-def resnet50(attention="no",norm = 'bn',**kwargs):
+def resnet34(attention="no",norm = 'bn',**kwargs):
     if attention == "no":
         model = ResNet(BasicBlock, [3, 4, 6, 3], norm,'no', **kwargs)
     else:
