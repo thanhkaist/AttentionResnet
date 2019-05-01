@@ -258,18 +258,22 @@ class BasicBlock(nn.Module):
 
         width = int(planes * (base_width / 64.)) * groups
         # Both self.conv1 and self.downsample layers downsample the input when stride != 1
-        self.conv1 = conv1x1(inplanes, width)
+        self.conv1 = conv3x3(inplanes, width,stride=stride)
         self.bn1 = norm_layer(width)
         self.conv2 = conv3x3(width, width, stride, groups)
         self.bn2 = norm_layer(width)
-        self.conv3 = conv1x1(width, planes * self.expansion)
-        self.bn3 = norm_layer(planes * self.expansion)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
 
         if attention == 'se':
-            self.att = SE_Attention_Layer(planes, reduction=4)
+            self.att = SE_Attention_Layer(planes * 4)
+        elif attention == 'c_bam':
+            self.att = None
+        elif attention == 's_bam':
+            self.att = None
+        elif attention == 'j_bam':
+            self.att = None
         elif attention == 'c_cbam':
             self.att = CBAM_Attention_Layer(planes,'c')
         elif attention == 's_cbam':
@@ -279,35 +283,25 @@ class BasicBlock(nn.Module):
         elif attention == 'no':
             self.att = None
         else:
-            self.att = None
-            #raise Exception('Unknown attention type')
+            raise Exception('Unknown att type')
+
 
     def forward(self, x):
 
         identity = x
-
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
-
         out = self.conv2(out)
         out = self.bn2(out)
-        out = self.relu(out)
-
-        out = self.conv3(out)
-        out = self.bn3(out)
-
         if self.downsample is not None:
             identity = self.downsample(x)
 
         if self.att is not None:
-            att = self.att(out)
-            att = self.sigmoid(att)
-            out = out*att
+            out = self.att(out)
 
         out += identity
         out = self.relu(out)
-
         return out
 
 
@@ -434,6 +428,46 @@ def resnet50(attention="no",norm = 'bn',**kwargs):
     else:
         raise Exception("Unknown attention for baseline resnet")
     return model
+
+
+def se_resnet34(attention="channel",norm = 'bn',**kwargs):
+    if attention == "channel":
+        model = ResNet(BasicBlock, [3, 4, 6, 3],norm, 'se', **kwargs)
+    else:
+        raise Exception("SEnet only support channel attention")
+    return model
+
+
+def bam_resnet34(attention="joint",norm = 'bn',**kwargs):
+    if attention == "channel":
+        model = ResNet(BasicBlock, [3, 4, 6, 3], norm, 'c_bam', **kwargs)
+    elif attention == "spatial":
+        model = ResNet(BasicBlock, [3, 4, 6, 3], norm, 's_bam', **kwargs)
+    elif attention == "joint":
+        model = ResNet(BasicBlock, [3, 4, 6, 3], norm, 'j_bam', **kwargs)
+    else:
+        raise Exception("Unknown attention for BAM")
+    return model
+
+def cbam_resnet34(attention="joint",norm = 'bn',**kwargs):
+    if attention == "channel":
+        model = ResNet(BasicBlock, [3, 4, 6, 3], norm, 'c_cbam', **kwargs)
+    elif attention == "spatial":
+        model = ResNet(BasicBlock, [3, 4, 6, 3], norm, 's_cbam', **kwargs)
+    elif attention == "joint":
+        model = ResNet(BasicBlock, [3, 4, 6, 3], norm, 'j_cbam', **kwargs)
+    else:
+        raise Exception("Unknown attention for CBAM")
+    return model
+
+
+def resnet50(attention="no",norm = 'bn',**kwargs):
+    if attention == "no":
+        model = ResNet(BasicBlock, [3, 4, 6, 3], norm,'no', **kwargs)
+    else:
+        raise Exception("Unknown attention for baseline resnet")
+    return model
+
 
 
 
