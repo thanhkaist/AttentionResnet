@@ -4,7 +4,6 @@ from models import *
 from torch.autograd import Variable
 import torch.nn as nn
 import torch.optim as optim
-import progressbar
 import torch
 import torch.optim.lr_scheduler as lr_scheduler
 import torchvision.transforms as transforms
@@ -19,8 +18,10 @@ import cv2
 args={}
 parser = argparse.ArgumentParser()
 parser.add_argument('--checkpoint', type=str, default='checkpoint')
-parser.add_argument('--model', type=str, default='resnet')
+parser.add_argument('--model', type=str, default='resnet50')
 parser.add_argument('--batch-size', type=int, default=100)
+parser.add_argument('--attention', type=str, default='no')
+
 args = parser.parse_args()
 
 
@@ -78,7 +79,9 @@ def main():
                              shuffle=False, num_workers=4, pin_memory=True)
 
     # Model
-    model_path = os.path.join(args.checkpoint, args.model, 'best_model.pt')
+
+    checkpoint = os.path.join(args.checkpoint, args.model + "_" + args.attention)
+    model_path = os.path.join(checkpoint, args.attention + '_' + 'best_model.pt')
     print('Loading model...')
     model = get_model(args.model)
     if os.path.exists(model_path):
@@ -91,8 +94,12 @@ def main():
     model.cuda()
     cudnn.benchmark = True
 
+    print('\tModel loaded: ' + args.model)
+    print('\tAttention type: ' + args.attention)
+    print("\tNumber of parameters: ", sum([param.nelement() for param in model.parameters()]))
+
     # result
-    result_path = os.path.join('results', args.model)
+    result_path = os.path.join('results', args.model + "_" + args.attention)
     if not os.path.exists(result_path):
         os.makedirs(result_path)
     
