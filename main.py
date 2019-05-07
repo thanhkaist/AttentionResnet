@@ -1,6 +1,6 @@
 from __future__ import print_function, division
 import os
-#import torch
+import torch
 import torchvision
 #import torch.nn as nn
 import numpy as np
@@ -86,7 +86,6 @@ def main():
     print('\tModel loaded: ' + configs.model )
     print('\tAttention type: ' + configs.attention )
     print("\tNumber of parameters: ", sum([param.nelement() for param in model.parameters()]))
-
     if configs.test:
         print("Run model in test mode")
         if os.path.exists(model_path):
@@ -108,6 +107,17 @@ def main():
         print('Accuracy on Top 1 accuracy: %.2f' % top1)
         print('Accuracy on Top 5 accuracy: %.2f' % top5)
         return
+    # Change to True if you want to calculate FLOPS
+    if False:
+        from pthflops import count_ops
+        f = open("flops.txt",'a+')
+        inp = torch.rand(2,3,32,32).cuda()
+        FLOPS = count_ops(model,inp)
+        print('\tFLOPS: %d' % FLOPS)
+        f.write('%d\n' % FLOPS)
+        f.close()
+        return
+
 
     # Tensor board
     tb = SummaryWriter(checkpoint)
