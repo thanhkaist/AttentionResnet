@@ -5,118 +5,232 @@
 # URL:      http://kazuto1011.github.io
 # Created:  2017-05-26
 
-from collections import OrderedDict
+from collections import OrderedDict, Sequence
 
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+from tqdm import tqdm
 
 
-class _PropagationBase(object):
+class _BaseWrapper(object):
+    """
+    Please modify forward() and backward() according to your task.
+    """
 
     def __init__(self, model):
-        super(_PropagationBase, self).__init__()
-        self.cuda = True if next(model.parameters()).is_cuda else False
+        super(_BaseWrapper, self).__init__()
+        self.device = next(model.parameters()).device
         self.model = model
-        self.model.eval()
-        self.image = None
+        self.handlers = []  # a set of hook function handlers
 
-    def _encode_one_hot(self, idx):
-        one_hot = torch.FloatTensor(1, self.preds.size()[-1]).zero_()
-        one_hot[0][idx] = 1.0
-        return one_hot.cuda() if self.cuda else one_hot
+    def _encode_one_hot(self, ids):
+        one_hot = torch.zeros_like(self.logits).to(self.device)
+        one_hot.scatter_(1, ids, 1.0)
+        return one_hot
 
     def forward(self, image):
-        self.image = image
+        """
+        Simple classification
+        """
         self.model.zero_grad()
-        self.preds = self.model(self.image)
-        self.probs = F.softmax(self.preds, dim=1)[0]
-        self.prob, self.idx = self.probs.data.sort(0, True)
-        return self.prob, self.idx
+        self.logits = self.model(image)
+        self.probs = F.softmax(self.logits, dim=1)
+        return self.probs.sort(dim=1, descending=True)
 
-    def backward(self, idx):
-        one_hot = self._encode_one_hot(idx)
-        self.preds.backward(gradient=one_hot, retain_graph=True)
+    def backward(self, ids):
+        """
+        Class-specific backpropagation
 
+        Either way works:
+        1. self.logits.backward(gradient=one_hot, retain_graph=True)
+        2. (self.logits * one_hot).sum().backward(retain_graph=True)
+        """
 
-class BackPropagation(_PropagationBase):
+        one_hot = self._encode_one_hot(ids)
+        self.logits.backward(gradient=one_hot, retain_graph=True)
 
     def generate(self):
-        output = self.image.grad.data.cpu().numpy()[0]
-        return output.transpose(1, 2, 0)
+        raise NotImplementedError
+
+    def remove_hook(self):
+        """
+        Remove all the forward/backward hook functions
+        """
+        for handle in self.handlers:
+            handle.remove()
+
+
+class BackPropagation(_BaseWrapper):
+    def forward(self, image):
+        self.image = image.requires_grad_()
+        return super(BackPropagation, self).forward(self.image)
+
+    def generate(self):
+        gradient = self.image.grad.clone()
+        self.image.grad.zero_()
+        return gradient
 
 
 class GuidedBackPropagation(BackPropagation):
+    """
+    "Striving for Simplicity: the All Convolutional Net"
+    https://arxiv.org/pdf/1412.6806.pdf
+    Look at Figure 1 on page 8.
+    """
 
     def __init__(self, model):
         super(GuidedBackPropagation, self).__init__(model)
 
-        def func_b(module, grad_in, grad_out):
+        def backward_hook(module, grad_in, grad_out):
             # Cut off negative gradients
             if isinstance(module, nn.ReLU):
                 return (torch.clamp(grad_in[0], min=0.0),)
 
         for module in self.model.named_modules():
-            module[1].register_backward_hook(func_b)
+            self.handlers.append(module[1].register_backward_hook(backward_hook))
 
 
-class Deconvolution(BackPropagation):
+class Deconvnet(BackPropagation):
+    """
+    "Striving for Simplicity: the All Convolutional Net"
+    https://arxiv.org/pdf/1412.6806.pdf
+    Look at Figure 1 on page 8.
+    """
 
     def __init__(self, model):
-        super(Deconvolution, self).__init__(model)
+        super(Deconvnet, self).__init__(model)
 
-        def func_b(module, grad_in, grad_out):
-            # Cut off negative gradients
+        def backward_hook(module, grad_in, grad_out):
+            # Cut off negative gradients and ignore ReLU
             if isinstance(module, nn.ReLU):
                 return (torch.clamp(grad_out[0], min=0.0),)
 
         for module in self.model.named_modules():
-            module[1].register_backward_hook(func_b)
+            self.handlers.append(module[1].register_backward_hook(backward_hook))
 
 
-class GradCAM(_PropagationBase):
+class GradCAM(_BaseWrapper):
+    """
+    "Grad-CAM: Visual Explanations from Deep Networks via Gradient-based Localization"
+    https://arxiv.org/pdf/1610.02391.pdf
+    Look at Figure 2 on page 4
+    """
 
-    def __init__(self, model):
+    def __init__(self, model, candidate_layers=None):
         super(GradCAM, self).__init__(model)
-        self.all_fmaps = OrderedDict()
-        self.all_grads = OrderedDict()
+        self.fmap_pool = OrderedDict()
+        self.grad_pool = OrderedDict()
+        self.candidate_layers = candidate_layers  # list
 
-        def func_f(module, input, output):
-            self.all_fmaps[id(module)] = output.data.cpu()
+        def forward_hook(key):
+            def forward_hook_(module, input, output):
+                # Save featuremaps
+                self.fmap_pool[key] = output.detach()
 
-        def func_b(module, grad_in, grad_out):
-            self.all_grads[id(module)] = grad_out[0].cpu()
+            return forward_hook_
 
-        for module in self.model.named_modules():
-            module[1].register_forward_hook(func_f)
-            module[1].register_backward_hook(func_b)
+        def backward_hook(key):
+            def backward_hook_(module, grad_in, grad_out):
+                # Save the gradients correspond to the featuremaps
+                self.grad_pool[key] = grad_out[0].detach()
 
-    def _find(self, outputs, target_layer):
-        for key, value in outputs.items():
-            for module in self.model.named_modules():
-                if id(module[1]) == key:
-                    if module[0] == target_layer:
-                        return value
-        raise ValueError('Invalid layer name: {}'.format(target_layer))
+            return backward_hook_
 
-    def _normalize(self, grads):
-        l2_norm = torch.sqrt(torch.mean(torch.pow(grads, 2))) + 1e-5
-        return grads / l2_norm.data[0]
+        # If any candidates are not specified, the hook is registered to all the layers.
+        for name, module in self.model.named_modules():
+            if self.candidate_layers is None or name in self.candidate_layers:
+                self.handlers.append(module.register_forward_hook(forward_hook(name)))
+                self.handlers.append(module.register_backward_hook(backward_hook(name)))
+
+    def _find(self, pool, target_layer):
+        if target_layer in pool.keys():
+            return pool[target_layer]
+        else:
+            raise ValueError("Invalid layer name: {}".format(target_layer))
 
     def _compute_grad_weights(self, grads):
-        grads = self._normalize(grads)
         return F.adaptive_avg_pool2d(grads, 1)
 
+    def forward(self, image):
+        self.image_shape = image.shape[2:]
+        return super(GradCAM, self).forward(image)
+
     def generate(self, target_layer):
-        fmaps = self._find(self.all_fmaps, target_layer)
-        grads = self._find(self.all_grads, target_layer)
+        fmaps = self._find(self.fmap_pool, target_layer)
+        grads = self._find(self.grad_pool, target_layer)
         weights = self._compute_grad_weights(grads)
+        gcam = torch.mul(fmaps, weights).sum(dim=1, keepdim=True)
+        gcam = F.relu(gcam)
 
-        gcam = (fmaps[0] * weights[0].data).sum(dim=0)
-        gcam = torch.clamp(gcam, min=0.)
+        gcam = F.interpolate(
+            gcam, self.image_shape, mode="bilinear", align_corners=False
+        )
 
-        gcam -= gcam.min()
-        gcam /= gcam.max()
+        B, C, H, W = gcam.shape
+        gcam = gcam.view(B, -1)
+        gcam -= gcam.min(dim=1, keepdim=True)[0]
+        gcam /= gcam.max(dim=1, keepdim=True)[0]
+        gcam = gcam.view(B, C, H, W)
 
-        return gcam.cpu().numpy()
+        return gcam
+
+
+def occlusion_sensitivity(
+        model, images, ids, mean=None, patch=35, stride=1, n_batches=128
+):
+    """
+    "Grad-CAM: Visual Explanations from Deep Networks via Gradient-based Localization"
+    https://arxiv.org/pdf/1610.02391.pdf
+    Look at Figure A5 on page 17
+
+    Originally proposed in:
+    "Visualizing and Understanding Convolutional Networks"
+    https://arxiv.org/abs/1311.2901
+    """
+
+    torch.set_grad_enabled(False)
+    model.eval()
+    mean = mean if mean else 0
+    patch_H, patch_W = patch if isinstance(patch, Sequence) else (patch, patch)
+    pad_H, pad_W = patch_H // 2, patch_W // 2
+
+    # Padded image
+    images = F.pad(images, (pad_W, pad_W, pad_H, pad_H), value=mean)
+    B, _, H, W = images.shape
+    new_H = (H - patch_H) // stride + 1
+    new_W = (W - patch_W) // stride + 1
+
+    # Prepare sampling grids
+    anchors = []
+    grid_h = 0
+    while grid_h <= H - patch_H:
+        grid_w = 0
+        while grid_w <= W - patch_W:
+            grid_w += stride
+            anchors.append((grid_h, grid_w))
+        grid_h += stride
+
+    # Baseline score without occlusion
+    baseline = model(images).detach().gather(1, ids)
+
+    # Compute per-pixel logits
+    scoremaps = []
+    for i in tqdm(range(0, len(anchors), n_batches), leave=False):
+        batch_images = []
+        batch_ids = []
+        for grid_h, grid_w in anchors[i: i + n_batches]:
+            images_ = images.clone()
+            images_[..., grid_h: grid_h + patch_H, grid_w: grid_w + patch_W] = mean
+            batch_images.append(images_)
+            batch_ids.append(ids)
+        batch_images = torch.cat(batch_images, dim=0)
+        batch_ids = torch.cat(batch_ids, dim=0)
+        scores = model(batch_images).detach().gather(1, batch_ids)
+        scoremaps += list(torch.split(scores, B))
+
+    diffmaps = torch.cat(scoremaps, dim=1) - baseline
+    diffmaps = diffmaps.view(B, new_H, new_W)
+
+    return diffmaps
