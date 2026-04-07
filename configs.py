@@ -20,7 +20,17 @@ def argparsing():
     parser.add_argument('--num_epochs', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=0.1)
     parser.add_argument('--test', dest='test', action='store_true')
-
+    parser.add_argument('--dataset', type=str, default='cifar100',
+                        help='Dataset to use: "cifar100" (default) or "custom"')
+    parser.add_argument('--data_dir', type=str, default='./data',
+                        help='Path to the dataset directory. For custom datasets, should follow '
+                             'ImageFolder structure: <data_dir>/train/<class>/ and '
+                             '<data_dir>/val/<class>/')
+    parser.add_argument('--num_classes', type=int, default=100,
+                        help='Number of output classes (default: 100 for CIFAR-100)')
+    parser.add_argument('--image_size', type=int, default=32,
+                        help='Input image size after resizing (default: 32 for CIFAR-100). '
+                             'For custom datasets with larger images, e.g. 224 or 500.')
 
     return parser.parse_args()
 
@@ -39,5 +49,9 @@ class Configs:
     norm = args.norm
     schedule = args.schedule
     gpu = True
+    dataset = args.dataset
+    data_dir = args.data_dir
+    num_classes = args.num_classes
+    image_size = args.image_size
 
 

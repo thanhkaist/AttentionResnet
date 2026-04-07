@@ -39,6 +39,71 @@ def loadCifa100():
     return [train_loader,val_loader,train_set, validation_set]
 
 
+def loadCustomDataset():
+    """Load a custom image dataset organised in ImageFolder structure.
+
+    Expected directory layout::
+
+        <data_dir>/
+            train/
+                class_a/  <image files>
+                class_b/  <image files>
+                ...
+            val/
+                class_a/  <image files>
+                class_b/  <image files>
+                ...
+
+    The ``--image_size`` argument controls the resize/crop dimension.
+    Mean and standard deviation are set to ImageNet values, which work
+    well as a starting point for most natural-image datasets.
+    """
+    image_size = configs.image_size
+    mean = [0.485, 0.456, 0.406]
+    std  = [0.229, 0.224, 0.225]
+
+    transform_train = transforms.Compose([
+        # Resize to 115% of the target size to provide a margin for random cropping
+        transforms.Resize(int(image_size * 1.15)),
+        transforms.RandomCrop(image_size),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std),
+    ])
+    transform_val = transforms.Compose([
+        # Resize to 115% of the target size before taking the centre crop
+        transforms.Resize(int(image_size * 1.15)),
+        transforms.CenterCrop(image_size),
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std),
+    ])
+
+    train_dir = os.path.join(configs.data_dir, 'train')
+    val_dir   = os.path.join(configs.data_dir, 'val')
+
+    if not os.path.isdir(train_dir):
+        raise FileNotFoundError(
+            'Training directory not found: {}. '
+            'Please organise your dataset as <data_dir>/train/<class>/ and '
+            '<data_dir>/val/<class>/'.format(train_dir)
+        )
+    if not os.path.isdir(val_dir):
+        raise FileNotFoundError(
+            'Validation directory not found: {}. '
+            'Please organise your dataset as <data_dir>/train/<class>/ and '
+            '<data_dir>/val/<class>/'.format(val_dir)
+        )
+
+    train_set      = torchvision.datasets.ImageFolder(train_dir, transform=transform_train)
+    validation_set = torchvision.datasets.ImageFolder(val_dir,   transform=transform_val)
+
+    train_loader = DataLoader(train_set, batch_size=configs.batch_size,
+                              shuffle=True, num_workers=4, pin_memory=True)
+    val_loader   = DataLoader(validation_set, batch_size=configs.batch_size,
+                              shuffle=False, num_workers=4, pin_memory=True)
+    return [train_loader, val_loader, train_set, validation_set]
+
+
 def accuracy(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
     maxk = max(topk)
@@ -75,14 +140,19 @@ def getAccuracy(model,validationLoader,validationSet):
 def main():
 
     print('Dataset is loading ...........')
-    train_loader, val_loader, train_set, validation_set = loadCifa100()
+    if configs.dataset == 'cifar100':
+        train_loader, val_loader, train_set, validation_set = loadCifa100()
+    elif configs.dataset == 'custom':
+        train_loader, val_loader, train_set, validation_set = loadCustomDataset()
+    else:
+        raise ValueError('Unknown dataset "{}". Use "cifar100" or "custom".'.format(configs.dataset))
     print('Make checkpoint folder')
     checkpoint = os.path.join(configs.checkpoint, configs.model + "_" + configs.attention)
     if not os.path.exists(checkpoint):
         os.makedirs(checkpoint)
     model_path = os.path.join(checkpoint,configs.attention+'_'+'best_model.pt')
     print('Load model')
-    model = get_model(configs.model, configs.norm,configs.attention)
+    model = get_model(configs.model, configs.norm, configs.attention, num_classes=configs.num_classes)
     print('\tModel loaded: ' + configs.model )
     print('\tAttention type: ' + configs.attention )
     print("\tNumber of parameters: ", sum([param.nelement() for param in model.parameters()]))
